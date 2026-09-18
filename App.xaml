@@ -1,0 +1,10 @@
+<Application x:Class="PackagingApp.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <Style TargetType="Window">
+            <Setter Property="Background" Value="#1a1a2e"/>
+        </Style>
+    </Application.Resources>
+</Application>

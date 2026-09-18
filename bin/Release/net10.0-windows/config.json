@@ -1,0 +1,6 @@
+{
+  "ServerUrl": "http://127.0.0.1:3002",
+  "WsUrl": "ws://127.0.0.1:3002/ws",
+  "ProjectId": 1,
+  "Role": "packaging"
+}

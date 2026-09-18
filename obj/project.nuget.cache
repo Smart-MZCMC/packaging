@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "Pvx8d1TAFIk=",
+  "success": true,
+  "projectFilePath": "D:\\Project\\smart-mzcmc\\PackagingApp\\PackagingApp.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Administrator\\.nuget\\packages\\newtonsoft.json\\13.0.3\\newtonsoft.json.13.0.3.nupkg.sha512"
+  ],
+  "logs": []
+}
