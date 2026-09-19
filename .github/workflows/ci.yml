@@ -16,11 +16,11 @@ jobs:
     name: Build (Windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # 目标框架是 net10.0-windows。
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -45,7 +45,7 @@ jobs:
         run: dotnet publish --no-build --configuration Release --output publish
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: PackagingApp-windows
           path: publish
