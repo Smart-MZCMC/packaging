@@ -1,0 +1,53 @@
+name: CI
+
+# 包装端：C# / .NET 10 WPF 桌面应用（net10.0-windows）
+# 依赖 WPF，只能在 Windows runner 上构建。
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 目标框架是 net10.0-windows。
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      # 当前工程没有测试项目，dotnet test 在无测试时会直接失败，因此先判断再执行。
+      - name: Test
+        shell: bash
+        run: |
+          set -e
+          if find . -name '*.csproj' -iname '*test*' | grep -q .; then
+            dotnet test --no-build --configuration Release
+          else
+            echo "没有发现测试项目，跳过"
+          fi
+
+      - name: Publish
+        run: dotnet publish --no-build --configuration Release --output publish
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PackagingApp-windows
+          path: publish
+          if-no-files-found: error
+          retention-days: 7
