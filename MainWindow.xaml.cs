@@ -11,6 +11,12 @@ namespace PackagingApp;
 
 public partial class MainWindow : Window
 {
+    /// <summary>「即将切台」配色：琥珀色。</summary>
+    private static readonly Brush PendingBrush = Freeze("#e0a030");
+
+    /// <summary>没有待切项时「即将切台」栏的配色。</summary>
+    private static readonly Brush IdleBrush = Freeze("#5a6b7d");
+
     private WebSocketClient? _wsClient;
     private AppConfig _config = new();
 
@@ -18,6 +24,14 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         LoadConfig();
+    }
+
+    private static Brush Freeze(string hex)
+    {
+        var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+        // 冻结后可跨线程安全共用。
+        brush.Freeze();
+        return brush;
     }
 
     private void LoadConfig()
@@ -54,26 +68,26 @@ public partial class MainWindow : Window
             });
         };
 
+        // 切台状态：后端每次都同时给出「当前播送」和「即将切台」，直接照着渲染。
+        _wsClient.ShotStateReceived += state =>
+        {
+            Dispatcher.Invoke(() =>
+            {
+                CurrentInstruction.Text = string.IsNullOrEmpty(state.Current) ? "—" : state.Current;
+                NextInstruction.Text = state.HasPending ? state.Next : "—";
+                NextInstruction.Foreground = state.HasPending ? PendingBrush : IdleBrush;
+                AddLog(state.HasPending
+                    ? $"[导播] 即将切台: {state.Next}（当前: {state.Current}）"
+                    : $"[导播] 正在播送: {state.Current}");
+            });
+        };
+
         _wsClient.MessageReceived += (type, subType, content) =>
         {
             Dispatcher.Invoke(() =>
             {
                 switch (type)
                 {
-                    case "next_shot":
-                        CurrentInstruction.Text = content;
-                        CurrentInstruction.Foreground = new SolidColorBrush(
-                            (Color)ColorConverter.ConvertFromString("#4ecca3"));
-                        AddLog($"[导播] 即将播送: {content}");
-                        break;
-
-                    case "confirm_switch":
-                        CurrentInstruction.Text = content;
-                        CurrentInstruction.Foreground = new SolidColorBrush(
-                            (Color)ColorConverter.ConvertFromString("#4ecca3"));
-                        AddLog($"[导播] 正在播送: {content}");
-                        break;
-
                     case "chat":
                         AddLog($"[内部消息] {content}");
                         break;

@@ -1,6 +1,6 @@
 {
-  "ServerUrl": "http://127.0.0.1:3000",
-  "WsUrl": "ws://127.0.0.1:3002/ws",
+  "ServerUrl": "http://zhdb.647382.xyz",
+  "WsUrl": "ws://zhdb.647382.xyz/ws",
   "ProjectId": 1,
   "Role": "packaging"
 }

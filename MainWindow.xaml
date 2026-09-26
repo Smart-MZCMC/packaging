@@ -24,17 +24,34 @@
             </Grid>
         </Border>
 
-        <!-- 当前指令区 -->
+        <!--
+            切台状态：两栏并排。
+            画面上真正在跑的机位在左（绿色），待命的机位在右（琥珀色）。
+            导播确认已切后右栏清空，只剩「当前播送」。
+        -->
         <Border Grid.Row="1" Background="#0f3460" Margin="16,10,16,5" Padding="16" CornerRadius="8">
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="当前指令" FontSize="14" Foreground="#888" Margin="0,0,0,8"/>
-                <TextBlock Grid.Row="1" x:Name="CurrentInstruction"
-                           Text="等待导播指令..." FontSize="42" FontWeight="Bold"
-                           Foreground="#4ecca3" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="1"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <TextBlock Text="正在播送" FontSize="14" Foreground="#888" Margin="0,0,0,8"/>
+                    <TextBlock x:Name="CurrentInstruction"
+                               Text="—" FontSize="38" FontWeight="Bold"
+                               Foreground="#4ecca3" TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <Border Grid.Column="1" Background="#1b3a5c" Margin="0,4"/>
+
+                <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="16,0,0,0">
+                    <TextBlock Text="即将切台" FontSize="14" Foreground="#888" Margin="0,0,0,8"/>
+                    <TextBlock x:Name="NextInstruction"
+                               Text="—" FontSize="38" FontWeight="Bold"
+                               Foreground="#e0a030" TextWrapping="Wrap"/>
+                </StackPanel>
             </Grid>
         </Border>
 

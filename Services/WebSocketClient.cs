@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using PackagingApp.Models;
@@ -17,7 +18,16 @@ public class WebSocketClient : IDisposable
     private AppConfig _config;
 
     public event Action<bool>? ConnectionChanged;
-    public event Action<string, string, string>? MessageReceived; // (type, subType, content)
+
+    /// <summary>
+    /// 其它消息：(type, subType, content)。
+    /// 切台状态不走这个事件，见 <see cref="ShotStateReceived"/>。
+    /// </summary>
+    public event Action<string, string, string>? MessageReceived;
+
+    /// <summary>收到切台状态，一次给出「当前播送」和「即将切台」。</summary>
+    public event Action<ShotState>? ShotStateReceived;
+
     public event Action<string>? SystemMessage;
 
     public bool IsConnected => _ws?.State == WebSocketState.Open;
@@ -66,19 +76,27 @@ public class WebSocketClient : IDisposable
         {
             while (_ws?.State == WebSocketState.Open && !_cts?.Token.IsCancellationRequested == true)
             {
-                var result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), _cts!.Token);
-
-                if (result.MessageType == WebSocketMessageType.Close)
+                // 一条 WS 消息可能被拆成多帧，按 EndOfMessage 拼完再解析。
+                using var frame = new MemoryStream();
+                WebSocketReceiveResult result;
+                do
                 {
-                    ConnectionChanged?.Invoke(false);
-                    if (!_intentionalClose) ScheduleReconnect();
-                    return;
-                }
+                    result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), _cts!.Token);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        ConnectionChanged?.Invoke(false);
+                        if (!_intentionalClose) ScheduleReconnect();
+                        return;
+                    }
+                    if (result.MessageType == WebSocketMessageType.Text)
+                    {
+                        frame.Write(buffer, 0, result.Count);
+                    }
+                } while (!result.EndOfMessage);
 
-                if (result.MessageType == WebSocketMessageType.Text)
+                if (frame.Length > 0)
                 {
-                    var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    HandleMessage(json);
+                    HandleMessage(Encoding.UTF8.GetString(frame.ToArray()));
                 }
             }
         }
@@ -100,16 +118,13 @@ public class WebSocketClient : IDisposable
 
             switch (type)
             {
-                case "next_shot":
-                    var content = payload?["content"]?.ToString() ?? "";
-                    MessageReceived?.Invoke("next_shot", "next", content);
-                    break;
-                case "confirm_switch":
-                    var switchContent = payload?["content"]?.ToString() ?? "";
-                    MessageReceived?.Invoke("confirm_switch", "confirm", switchContent);
+                case "shot_state":
+                    // 导播端每次切台都下发完整状态：current=当前播送，next=即将切台。
+                    ShotStateReceived?.Invoke(payload?.ToObject<ShotState>() ?? new ShotState());
                     break;
                 case "chat":
                     var chatMsg = payload?["message"]?.ToString() ?? "";
+                    // 心跳只是保活信号，后端不会再转发，这里只是兜底跳过。
                     if (chatMsg == "heartbeat") break;
                     MessageReceived?.Invoke("chat", "message", chatMsg);
                     break;
@@ -123,8 +138,9 @@ public class WebSocketClient : IDisposable
                     MessageReceived?.Invoke("interview_status", pointCode, status);
                     break;
                 case "system":
-                    var sysMsg = payload?["message"]?.ToString() ?? "";
-                    SystemMessage?.Invoke(sysMsg);
+                    SystemMessage?.Invoke(payload?["message"]?.ToString()
+                        ?? payload?["error"]?.ToString()
+                        ?? "");
                     break;
             }
         }
