@@ -1,6 +1,9 @@
 {
+  "_comment": "包装端配置。Username/Password 是登录用的账号；留空表示不登录，行为与改动前一致。后端打开 REQUIRE_PROJECT_MEMBERSHIP 之后，WebSocket 会校验这个账号是不是 ProjectId 的成员，届时没有凭据的包装端会连不上——所以先把账号填好、确认能连上，再打开那个开关。",
   "ServerUrl": "http://zhdb.647382.xyz",
   "WsUrl": "ws://zhdb.647382.xyz/ws",
   "ProjectId": 1,
-  "Role": "packaging"
+  "Role": "packaging",
+  "Username": "",
+  "Password": ""
 }

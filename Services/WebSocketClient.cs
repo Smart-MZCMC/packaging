@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
 using PackagingApp.Models;
@@ -16,6 +17,15 @@ public class WebSocketClient : IDisposable
     private bool _intentionalClose;
     private int _reconnectAttempts;
     private AppConfig _config;
+
+    /// <summary>
+    /// 登录换来的 JWT。
+    ///
+    /// 包装端此前**连登录这个概念都没有**：它在服务端是匿名的，任何人拿到
+    /// 那个地址就能监听整个项目的实时消息。后端启用 REQUIRE_PROJECT_MEMBERSHIP
+    /// 之后，没有令牌的连接会被直接拒绝，所以凭据必须在那之前就位。
+    /// </summary>
+    private string? _token;
 
     public event Action<bool>? ConnectionChanged;
 
@@ -43,6 +53,49 @@ public class WebSocketClient : IDisposable
         await DoConnectAsync();
     }
 
+    /// <summary>
+    /// 用配置里的账号换一个令牌。
+    ///
+    /// 没配账号时返回 null 且不发请求：这样在没有启用成员校验的部署上，
+    /// 包装端的行为与改动前完全一致——现场不会因为少填一个字段而起不来。
+    /// </summary>
+    private async Task<string?> LoginAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_config.Username) || string.IsNullOrEmpty(_config.Password))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            var body = JsonConvert.SerializeObject(new
+            {
+                username = _config.Username,
+                password = _config.Password
+            });
+            var url = $"{_config.ServerUrl.TrimEnd('/')}/api/auth/login";
+            using var content = new StringContent(body, Encoding.UTF8, "application/json");
+            using var resp = await http.PostAsync(url, content);
+            if (!resp.IsSuccessStatusCode)
+            {
+                // 密码错、账号被停用都会走到这里。一定要透出到界面：否则现场
+                // 只看到一直「连接中...」，完全分不清是凭据问题还是网络问题。
+                var detail = await resp.Content.ReadAsStringAsync();
+                SystemMessage?.Invoke($"登录失败 HTTP {(int)resp.StatusCode}：{detail}");
+                return null;
+            }
+
+            var json = JObject.Parse(await resp.Content.ReadAsStringAsync());
+            return json["token"]?.ToString();
+        }
+        catch (Exception ex)
+        {
+            SystemMessage?.Invoke($"登录异常：{ex.Message}");
+            return null;
+        }
+    }
+
     private async Task DoConnectAsync()
     {
         try
@@ -53,7 +106,16 @@ public class WebSocketClient : IDisposable
             _ws = new ClientWebSocket();
             _cts = new CancellationTokenSource();
 
+            // 每次重连都重新换令牌：JWT_TTL 默认 60 分钟，长时间运行的包装端
+            // 用旧令牌重连会一直失败，而失败原因只表现为「连不上」。
+            _token = await LoginAsync();
+
             var url = $"{_config.WsUrl}?project_id={_config.ProjectId}&role={_config.Role}";
+            if (!string.IsNullOrEmpty(_token))
+            {
+                url += $"&token={Uri.EscapeDataString(_token)}";
+            }
+
             await _ws.ConnectAsync(new Uri(url), _cts.Token);
 
             _reconnectAttempts = 0;
@@ -64,6 +126,9 @@ public class WebSocketClient : IDisposable
         }
         catch
         {
+            // 连不上时丢掉令牌，下一轮重新登录。绝大多数失败是令牌过期，
+            // 拿着同一个过期令牌重试是白费。
+            _token = null;
             ConnectionChanged?.Invoke(false);
             ScheduleReconnect();
         }
@@ -138,6 +203,11 @@ public class WebSocketClient : IDisposable
                     MessageReceived?.Invoke("interview_status", pointCode, status);
                     break;
                 case "system":
+                    // 连接与断线重连时，后端会把项目当前的切台状态放进欢迎消息。
+                    //
+                    // 没有这一步的话，中途连上来的包装端两栏都是空的，直到下一次
+                    // 切台——字幕与包装的准备工作正好需要提前知道下一条是什么。
+                    ApplyWelcomeState(payload);
                     SystemMessage?.Invoke(payload?["message"]?.ToString()
                         ?? payload?["error"]?.ToString()
                         ?? "");
@@ -145,6 +215,26 @@ public class WebSocketClient : IDisposable
             }
         }
         catch { }
+    }
+
+    /// <summary>
+    /// 渲染欢迎消息里带回来的当前切台状态。
+    /// </summary>
+    private void ApplyWelcomeState(JObject? payload)
+    {
+        if (payload == null) return;
+        if (payload["state_available"]?.Value<bool>() != true) return;
+
+        var state = new ShotState
+        {
+            Current = payload["current_shot"]?.ToString() ?? "",
+            Next = payload["next_shot"]?.ToString() ?? ""
+        };
+
+        // 什么都没有时不要冒充成一次切台，交给界面继续显示空栏。
+        if (string.IsNullOrEmpty(state.Current) && string.IsNullOrEmpty(state.Next)) return;
+
+        ShotStateReceived?.Invoke(state);
     }
 
     private void StartHeartbeat()
@@ -160,7 +250,13 @@ public class WebSocketClient : IDisposable
                     {
                         type = "chat",
                         project_id = _config.ProjectId,
-                        payload = new { message = "heartbeat" }
+                        payload = new
+                        {
+                            message = "heartbeat",
+                            // 时间戳供服务端刷新「最后一次见到这个客户端」的时刻，
+                            // 掉线扫描判断的就是它。
+                            ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                        }
                     });
                     var bytes = Encoding.UTF8.GetBytes(msg);
                     _ws?.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
@@ -193,5 +289,6 @@ public class WebSocketClient : IDisposable
         _cts?.Cancel();
         _ws?.Dispose();
         _cts?.Dispose();
+        GC.SuppressFinalize(this);
     }
 }
