@@ -1,7 +1,0 @@
-D:\Project\smart-mzcmc\PackagingApp\bin\Release\net10.0-windows\publish\PackagingApp.exe
-D:\Project\smart-mzcmc\PackagingApp\bin\Release\net10.0-windows\publish\config.json
-D:\Project\smart-mzcmc\PackagingApp\bin\Release\net10.0-windows\publish\PackagingApp.dll
-D:\Project\smart-mzcmc\PackagingApp\bin\Release\net10.0-windows\publish\PackagingApp.deps.json
-D:\Project\smart-mzcmc\PackagingApp\bin\Release\net10.0-windows\publish\PackagingApp.runtimeconfig.json
-D:\Project\smart-mzcmc\PackagingApp\bin\Release\net10.0-windows\publish\PackagingApp.pdb
-D:\Project\smart-mzcmc\PackagingApp\bin\Release\net10.0-windows\publish\Newtonsoft.Json.dll

@@ -1,7 +1,0 @@
-D:\Project\smart-mzcmc\PackagingApp\publish\PackagingApp.exe
-D:\Project\smart-mzcmc\PackagingApp\publish\config.json
-D:\Project\smart-mzcmc\PackagingApp\publish\PackagingApp.dll
-D:\Project\smart-mzcmc\PackagingApp\publish\PackagingApp.deps.json
-D:\Project\smart-mzcmc\PackagingApp\publish\PackagingApp.runtimeconfig.json
-D:\Project\smart-mzcmc\PackagingApp\publish\PackagingApp.pdb
-D:\Project\smart-mzcmc\PackagingApp\publish\Newtonsoft.Json.dll
