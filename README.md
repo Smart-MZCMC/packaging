@@ -35,7 +35,9 @@
   "ServerUrl": "http://zhdb.647382.xyz",
   "WsUrl": "ws://zhdb.647382.xyz/ws",
   "ProjectId": 1,
-  "Role": "packaging"
+  "Role": "packaging",
+  "Username": "",
+  "Password": ""
 }
 ```
 
@@ -44,16 +46,30 @@
 | `WsUrl` | **实际生效**的地址。反代部署下是 `ws://<域名>/ws` |
 | `ProjectId` | 目标项目 id |
 | `Role` | 固定 `packaging` |
-| `ServerUrl` | **当前没有任何代码使用**——本应用只通过 WebSocket 通信，不发 HTTP 请求。留着备用 |
+| `ServerUrl` | HTTP 接口地址，**登录时用**（`POST /api/auth/login`） |
+| `Username` / `Password` | 登录账号。**留空表示不登录** |
 
-本应用**不使用 HTTP API**，所以只需要 WebSocket 能连通。
+### 关于登录账号
+
+包装端此前在服务端是**匿名的**：任何人知道那个地址就能监听整个项目的实时
+消息。后端把 `REQUIRE_PROJECT_MEMBERSHIP` 打开之后，WebSocket 会校验「这个
+账号是不是该项目的成员」，没有令牌的连接会在握手阶段被拒。
+
+**账号留空时不登录，行为与改动前完全一致**，所以可以先把配置发下去、确认
+现场都没受影响，再打开后端的开关。
+
+- 每次重连都会**重新登录**：JWT 默认 60 分钟过期，长时间运行的客户端拿旧
+  令牌重连会一直失败。
+- 登录失败会显示在底部状态栏（`[系统] 登录失败 HTTP 401：...`），
+  不会只停在「连接中...」——现场能直接看出是账号问题还是网络问题。
+- 开启 HTTPS 后 `ServerUrl` 也要跟着改成 `https://`。
 
 ::: danger 启用 HTTPS 后必须把 `ws://` 改成 `wss://`
 原生应用不受「混合内容」限制，但服务端若只在 443 提供 TLS，`ws://` 仍然连不上。
 :::
 
 ::: tip 反代与直连的区别
-- **直连**（本地开发）：`ws://<服务器IP>:3002/ws`
+- **直连**（本地开发）：`ws://<服务器IP>:3002/ws`，`ServerUrl` 同理带 `:3000`
 - **反代**（生产）：`ws://<域名>/ws`，nginx 把 `/ws` 转到 3002
 
 两种形态都由后端首页自动识别并显示，配置照着首页「接入地址」区块填即可。
@@ -90,11 +106,19 @@ dotnet publish --configuration Release --output publish
 | :--- | :--- |
 | `shot_state` | 左栏「正在播送」= `payload.current`；右栏「即将切台」= `payload.next`（空串则显示 `—`） |
 | `chat` | 显示内部消息 |
-| `lock_update` | 控制权变更提示（例如另一位导播接手） |
-| `interview_status` | 采访点状态变化 |
+| `lock_update` | 控制权变更提示（例如另一位导播接手，`payload.reason` 为 `disconnect` 或 `timeout`） |
+| `interview_status` | 采访点状态变化，含 `offline`（后端在采访端失联时自动置为离线） |
+| `system` | 系统提示；**连接成功的那条带 `current_shot`**，据此在连上的一瞬间就渲染当前状态 |
 
-连接后周期性发送心跳（`chat` + `payload.message = "heartbeat"`）保活。
-后端在入库前就会丢弃心跳，所以它不会进日志、也不计入消息统计。断线自动重连。
+连接后周期性发送心跳（`chat` + `payload.message = "heartbeat"` + `ts`）保活。
+后端在入库前就会丢弃心跳，所以它不会进日志、也不计入消息统计；`ts` 供服务端
+刷新「最后一次见到这个客户端」的时刻，掉线扫描判断的就是它。断线自动重连。
+
+::: tip 中途连上也看得到当前状态
+后端在握手时的欢迎消息里带上项目当前的切台状态，所以**重连或中途启动的包装端
+不必等下一次切台**就能看到两栏内容。字幕与包装的准备工作正好需要提前知道
+下一条是什么。
+:::
 
 ## 部署
 
