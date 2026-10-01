@@ -1,5 +1,5 @@
 ﻿PackagingApp
-
+1.2.0.0
 
 winexe
 C#
@@ -12,7 +12,7 @@ TRACE;RELEASE;NET;NET10_0;NETCOREAPP;WINDOWS;WINDOWS7_0;NET5_0_OR_GREATER;NET6_0
 D:\Project\smart-mzcmc\PackagingApp\App.xaml
 11407045341
 
-61546438641
+9-669371561
 207-2141675615
 MainWindow.xaml;
 

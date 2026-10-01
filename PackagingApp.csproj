@@ -7,6 +7,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <RootNamespace>PackagingApp</RootNamespace>
+    <!--
+      版本号。CI 用 -p:Version=1.2.0 覆盖；这里是本地构建的默认值。
+
+      必须显式声明：SDK 默认给的是 1.0.0，于是所有构建产物的版本都一样，
+      界面上的版本号也就失去意义（客户端靠它判断自己是否低于服务端要求的
+      最低适配版本）。
+    -->
+    <Version>1.2.0</Version>
+    <AssemblyVersion>1.2.0.0</AssemblyVersion>
+    <FileVersion>1.2.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>

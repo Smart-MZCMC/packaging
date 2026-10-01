@@ -24,11 +24,33 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # 版本号取后端仓库的最新 release tag。
+      #
+      # 为什么不在 csproj 里写死：那两个 csproj 之前根本没声明 Version，
+      # SDK 默认给 1.0.0，于是所有产物版本都一样、界面上写死的 "v1.0" 也
+      # 永远是错的。客户端靠这个版本号判断自己是否低于服务端要求的
+      # 最低适配版本，写死就失去意义了。
+      #
+      # 拿不到就回落到 0.0.0-ci：留空会让版本比较解析失败，界面反而不提示，
+      # 那比显示一个明显不对的版本号更危险。
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(gh api repos/Smart-MZCMC/backend/releases/latest --jq '.tag_name' 2>/dev/null | tr -d 'v' || echo "")
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            version="0.0.0-ci"
+            echo "::warning::未能解析后端版本号，回落到 $version（界面会提示版本不可比较）"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "构建版本: $version"
+
       - name: Restore
         run: dotnet restore
 
       - name: Build
-        run: dotnet build --no-restore --configuration Release
+        run: dotnet build -p:Version=${{ steps.ver.outputs.version }} --no-restore --configuration Release
 
       # 当前工程没有测试项目，dotnet test 在无测试时会直接失败，因此先判断再执行。
       - name: Test
@@ -42,7 +64,7 @@ jobs:
           fi
 
       - name: Publish
-        run: dotnet publish --no-build --configuration Release --output publish
+        run: dotnet publish -p:Version=${{ steps.ver.outputs.version }} --no-build --configuration Release --output publish
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

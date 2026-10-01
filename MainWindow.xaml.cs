@@ -19,11 +19,19 @@ public partial class MainWindow : Window
 
     private WebSocketClient? _wsClient;
     private AppConfig _config = new();
+    private VersionService? _versionService;
+    private bool _versionBannerDismissed;
 
     public MainWindow()
     {
         InitializeComponent();
         LoadConfig();
+        // 底栏原来硬编码 "v1.0"，与实际构建版本无关（csproj 甚至没声明
+        // Version，SDK 默认就是 1.0.0）。改成读程序集，客户端才能据此判断
+        // 自己是否低于服务端要求的最低适配版本。
+        var selfVersion = $"校园直播导播协调系统 v{AppVersion.Current}";
+        FooterVersionText.Text = selfVersion;
+        VersionSelfText.Text = $"v{AppVersion.Current}";
     }
 
     private static Brush Freeze(string hex)
@@ -52,6 +60,89 @@ public partial class MainWindow : Window
     {
         base.OnSourceInitialized(e);
         _ = ConnectWebSocket();
+        StartVersionWatch();
+    }
+
+    /// <summary>
+    /// 周期性检查与服务端的版本是否匹配。
+    ///
+    /// 只做提示，不阻断任何功能：这是包装端，播送中出问题比提示更重要。
+    /// </summary>
+    private void StartVersionWatch()
+    {
+        try
+        {
+            _versionService = new VersionService(_config.ServerUrl);
+        }
+        catch
+        {
+            return;
+        }
+
+        var timer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = VersionService.PollInterval,
+        };
+        timer.Tick += async (_, _) =>
+        {
+            timer.Stop();
+            try
+            {
+                await RefreshVersionBannerAsync();
+            }
+            finally
+            {
+                // 无论成功失败都重新开始，避免一次异常后永远不再检查。
+                timer.Start();
+            }
+        };
+        timer.Start();
+
+        // 立刻查一次：现场部署完新版本，操作员不该等 5 分钟才看到提示。
+        _ = RefreshVersionBannerAsync();
+    }
+
+    private async Task RefreshVersionBannerAsync()
+    {
+        var service = _versionService;
+        if (service is null) return;
+
+        var check = await service.FetchAsync().ConfigureAwait(true);
+        if (_versionBannerDismissed) return;
+
+        var text = DescribeVersionCheck(check);
+        if (string.IsNullOrEmpty(text))
+        {
+            VersionBanner.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        VersionBannerText.Text = text;
+        VersionSelfVersionText.Text = $"本端 v{AppVersion.Current}";
+        VersionBanner.Visibility = Visibility.Visible;
+    }
+
+    private static string DescribeVersionCheck(AppVersion.VersionCheck check)
+    {
+        return check.Status switch
+        {
+            AppVersion.VersionStatus.Unsupported =>
+                $"包装端版本 {check.Client} 已低于服务端要求的最低适配版本 {check.Minimum}，"
+                + "部分功能可能异常，请尽快更新。",
+            AppVersion.VersionStatus.ClientBehind =>
+                $"包装端版本 {check.Client} 落后于服务端 {check.Server}，建议更新后再使用。",
+            AppVersion.VersionStatus.ClientAhead =>
+                $"包装端版本 {check.Client} 新于服务端 {check.Server}，"
+                + "服务端可能缺少接口，请升级服务端。",
+            _ => string.Empty,
+        };
+    }
+
+    private void OnVersionBannerClose(object sender, RoutedEventArgs e)
+    {
+        // 只隐藏本次，不停止轮询：版本再次变化时还会提示。
+        _versionBannerDismissed = true;
+        VersionBanner.Visibility = Visibility.Collapsed;
     }
 
     private async Task ConnectWebSocket()

@@ -6,6 +6,8 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="50"/>
+            <!-- 版本提示条：默认折叠，只在不匹配时由代码显示。 -->
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
@@ -18,18 +20,49 @@
                 <TextBlock Text="包装端" FontSize="20" FontWeight="Bold"
                            Foreground="White" VerticalAlignment="Center"/>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock x:Name="VersionSelfText" Text="" Foreground="#7d7d9a"
+                               FontSize="11" VerticalAlignment="Center" Margin="0,0,12,0"/>
                     <Ellipse x:Name="StatusDot" Width="12" Height="12" Fill="Red" Margin="0,0,8,0"/>
                     <TextBlock x:Name="StatusText" Text="连接中..." Foreground="White" FontSize="14" VerticalAlignment="Center"/>
                 </StackPanel>
             </Grid>
         </Border>
+        <!--
+            版本不一致提示条。
+
+            为什么用可关闭的条而不是 MessageBox：播送中弹对话框会挡视线；
+            而「低于最低适配版本」这种必须让人知道的情况又不能完全静默，
+            所以给一条常驻顶部的横幅。点关闭后本次不再打扰，但轮询继续 ——
+            版本再次变化时还会提示。
+        -->
+        <Border x:Name="VersionBanner" Grid.Row="1" Visibility="Collapsed"
+                Background="#2b2038" BorderBrush="#e94560" BorderThickness="0,0,0,1"
+                Padding="16,6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="VersionBannerText" Grid.Column="0" Text=""
+                           Foreground="#e94560" FontSize="12" VerticalAlignment="Center"
+                           TextWrapping="Wrap"/>
+                <TextBlock x:Name="VersionSelfVersionText" Grid.Column="1" Text=""
+                           Foreground="#7d7d9a" FontSize="11" VerticalAlignment="Center"
+                           Margin="10,0"/>
+                <Button Grid.Column="2" Content="知道了" Click="OnVersionBannerClose"
+                        Background="Transparent" BorderThickness="0" Foreground="#7d7d9a"
+                        FontSize="12" Cursor="Hand" Padding="6,0" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
 
         <!--
             切台状态：两栏并排。
             画面上真正在跑的机位在左（绿色），待命的机位在右（琥珀色）。
             导播确认已切后右栏清空，只剩「当前播送」。
         -->
-        <Border Grid.Row="1" Background="#0f3460" Margin="16,10,16,5" Padding="16" CornerRadius="8">
+        <Border Grid.Row="2" Background="#0f3460" Margin="16,10,16,5" Padding="16" CornerRadius="8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -56,7 +89,7 @@
         </Border>
 
         <!-- 消息日志区 -->
-        <Border Grid.Row="2" Background="#16213e" Margin="16,5,16,5" CornerRadius="8">
+        <Border Grid.Row="3" Background="#16213e" Margin="16,5,16,5" CornerRadius="8">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -86,7 +119,7 @@
         </Border>
 
         <!-- 项目切换指令区 -->
-        <Border Grid.Row="3" Background="#0f3460" Margin="16,5,16,5" Padding="12" CornerRadius="8">
+        <Border Grid.Row="4" Background="#0f3460" Margin="16,5,16,5" Padding="12" CornerRadius="8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -102,7 +135,7 @@
         </Border>
 
         <!-- 底部状态栏 -->
-        <Border Grid.Row="4" Background="#16213e" Margin="16,5,16,10" Padding="12" CornerRadius="8">
+        <Border Grid.Row="5" Background="#16213e" Margin="16,5,16,10" Padding="12" CornerRadius="8">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -113,7 +146,7 @@
                            Foreground="#666" FontSize="12" Margin="0,0,0,4"/>
                 <TextBlock Grid.Row="1" x:Name="InterviewStatusText" Text=""
                            Foreground="#888" FontSize="12" Margin="0,0,0,4"/>
-                <TextBlock Grid.Row="2" Text="校园直播导播协调系统 v1.0"
+                <TextBlock Grid.Row="2" x:Name="FooterVersionText" Text="校园直播导播协调系统"
                            Foreground="#444" FontSize="11"/>
             </Grid>
         </Border>
