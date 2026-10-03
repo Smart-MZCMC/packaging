@@ -11,3 +11,5 @@ publish/
 
 # 发布流程会把最终产物作为 artifact 上传，不入库
 *.apk
+# release.yml 打的包直接产在仓库根目录，文件名带版本号，一样不入库
+*.zip

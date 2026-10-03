@@ -1,17 +1,77 @@
 <Window x:Class="PackagingApp.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="包装端 - 校园直播导播协调系统" Height="650" Width="850"
+        Title="包装端 - 校园直播导播协调系统" Height="700" Width="900"
         Background="#1a1a2e" WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <!--
+            标题栏与设置区里那些小按钮的统一样式。
+
+            为什么不用系统默认按钮样式：窗口是深色的，默认按钮的白底在顶部
+            标题栏里非常刺眼，播送时抢视线——这正是这个应用一直在刻意回避的
+            （连版本提示都做成常驻条而不是 MessageBox，见下面 VersionBanner）。
+        -->
+        <Style x:Key="FlatButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#7d7d9a" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!--
+            「保存并重连」是设置区里唯一有后果的动作（要断开重连 WS），
+            所以给它唯一的强调色，避免操作员把它和「取消」点反。
+        -->
+        <Style x:Key="PrimaryFlatButton" TargetType="Button" BasedOn="{StaticResource FlatButton}">
+            <Setter Property="Foreground" Value="#4ecca3" />
+            <Setter Property="FontWeight" Value="Bold" />
+        </Style>
+
+        <!--
+            设置区的输入框。默认的 TextBox 是白底黑字，在深色面板里像一排
+            灯泡；PasswordBox 因为不是 TextBox 的子类，样式无法继承，只能
+            把同样的 Setter 抄一遍。
+        -->
+        <Style x:Key="FieldBox" TargetType="TextBox">
+            <Setter Property="Background" Value="#0f3460" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#1b3a5c" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style x:Key="FieldBoxPassword" TargetType="PasswordBox">
+            <Setter Property="Background" Value="#0f3460" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#1b3a5c" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#8a8aa8" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+    </Window.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="50"/>
             <!-- 版本提示条：默认折叠，只在不匹配时由代码显示。 -->
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <!--
+                切台状态占剩下的全部空间（原来是固定高度，日志区占了 160）。
+                日志区删掉之后这里就是包装员的主视线，值得吃掉所有多余高度。
+            -->
             <RowDefinition Height="*"/>
+            <!-- 设置区：默认折叠，点右上角「设置」展开。 -->
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="160"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- 顶部标题栏 -->
@@ -24,6 +84,15 @@
                                FontSize="11" VerticalAlignment="Center" Margin="0,0,12,0"/>
                     <Ellipse x:Name="StatusDot" Width="12" Height="12" Fill="Red" Margin="0,0,8,0"/>
                     <TextBlock x:Name="StatusText" Text="连接中..." Foreground="White" FontSize="14" VerticalAlignment="Center"/>
+                    <Border Width="1" Height="14" Background="#2b3450" Margin="12,0" />
+                    <!--
+                        设置入口放最右。现场调 CSV 路径、换项目账号都要用它，
+                        做成展开式而不是弹窗：播送中途点错了也不至于弹个框挡住
+                        正在播的画面（与版本提示同一个理由）。
+                    -->
+                    <Button x:Name="SettingsToggleButton" Content="设置"
+                            Click="OnSettingsToggle" Style="{StaticResource FlatButton}"
+                            Foreground="#9a9ab8"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -61,6 +130,10 @@
             切台状态：两栏并排。
             画面上真正在跑的机位在左（绿色），待命的机位在右（琥珀色）。
             导播确认已切后右栏清空，只剩「当前播送」。
+
+            这两栏同时也是 CSV 第 2、3 行的来源，界面上显示的东西与写进文件
+            的东西必须是同一份快照——不一致的话，包装员看着「正在播送 A」
+            而芯象叠着 B，排查起来会怀疑是不是切换台坏了。
         -->
         <Border Grid.Row="2" Background="#0f3460" Margin="16,10,16,5" Padding="16" CornerRadius="8">
             <Grid>
@@ -88,34 +161,97 @@
             </Grid>
         </Border>
 
-        <!-- 消息日志区 -->
-        <Border Grid.Row="3" Background="#16213e" Margin="16,5,16,5" CornerRadius="8">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="消息日志" FontSize="14" Foreground="#888" Margin="12,8,0,4"/>
-                <ListBox Grid.Row="1" x:Name="MessageLog" Background="Transparent"
-                         BorderThickness="0" Foreground="White" FontSize="13"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                            <Setter Property="Padding" Value="12,4"/>
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="ListBoxItem">
-                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter/>
-                                        </Border>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </ListBox.ItemContainerStyle>
-                </ListBox>
-            </Grid>
+        <!--
+            设置区。展开式而不是弹窗：播送中弹窗会挡住画面，而且现场改配置
+            通常就在切台间隙的几秒钟里，改完还得马上确认状态对不对。
+        -->
+        <Border x:Name="SettingsPanel" Grid.Row="3" Visibility="Collapsed"
+                Background="#16213e" Margin="16,5,16,5" Padding="14,12" CornerRadius="8">
+            <StackPanel>
+                <TextBlock Text="设置" FontSize="14" FontWeight="Bold" Foreground="White"
+                           Margin="0,0,0,8"/>
+                <!--
+                    三列而不是两列：这一整块的高度是从上面那两栏（包装员真正盯着
+                    的地方）挤出来的，展开时那两栏只剩几百像素可用，挤到它们
+                    显示不全比字段多排一行糟糕得多。
+                -->
+                <UniformGrid Columns="3">
+                    <StackPanel Margin="0,0,12,8">
+                        <TextBlock Text="服务器地址" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="ServerUrlBox" Style="{StaticResource FieldBox}"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,12,8">
+                        <TextBlock Text="WebSocket 地址" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="WsUrlBox" Style="{StaticResource FieldBox}"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,0,8">
+                        <TextBlock Text="项目 ID" Style="{StaticResource FieldLabel}"/>
+                        <!--
+                            用文本框而不是数字框：现场习惯把它当普通字符串抄，
+                            数字框的上下微调箭头在这种场合只会误触。
+                        -->
+                        <TextBox x:Name="ProjectIdBox" Style="{StaticResource FieldBox}"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,12,0">
+                        <TextBlock Text="用户名" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="UsernameBox" Style="{StaticResource FieldBox}"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,12,0">
+                        <TextBlock Text="密码" Style="{StaticResource FieldLabel}"/>
+                        <PasswordBox x:Name="PasswordBox" Style="{StaticResource FieldBoxPassword}"/>
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="赛事名覆盖（留空按项目名查）" Style="{StaticResource FieldLabel}"/>
+                        <!--
+                            覆盖值优先于后端查回来的项目名。之所以要留这个口子：
+                            运动会名这类东西现场常有临时叫法，而 CSV 第一行一旦
+                            写错，现场的标题就是错的，且现场不会去查为什么。
+                        -->
+                        <TextBox x:Name="EventNameBox" Style="{StaticResource FieldBox}"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,8,12,0">
+                        <TextBlock Text="CSV 输出路径（芯象从这里读）" Style="{StaticResource FieldLabel}"/>
+                        <!--
+                            浏览按钮。为什么必须给：现场的人不知道 CSV 该放哪，
+                            而这个路径错了不会立刻暴露——芯象读不到文件时只会
+                            「标题没变化」，没人会想到是包装端的路径填错了。
+                            手打一个路径既慢又容易打错。
+
+                            只能选本机路径。CSV 要写到网络共享时对话框给不了，
+                            那一栏还得手打——这是这个按钮的能力边界，不是缺陷。
+                        -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="CsvPathBox" Grid.Column="0"
+                                     Style="{StaticResource FieldBox}"/>
+                            <Button Grid.Column="1" Content="浏览" Click="OnBrowseCsvPath"
+                                    Style="{StaticResource FlatButton}"
+                                    Margin="6,0,0,0" Padding="10,0"/>
+                        </Grid>
+                    </StackPanel>
+                </UniformGrid>
+                <!--
+                    提示与按钮同处一行：保存/取消的结果只可能出现在这里，
+                    而单独占一行常驻着（哪怕是空的）会把上面的两栏压扁。
+                -->
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" x:Name="SettingsHintText" Text=""
+                               Foreground="#e94560" FontSize="11" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" Margin="0,0,10,0"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <Button Content="取消" Click="OnSettingsCancel" Style="{StaticResource FlatButton}"/>
+                        <Button Content="保存并重连" Click="OnSettingsSave"
+                                Style="{StaticResource PrimaryFlatButton}"/>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
         </Border>
 
         <!-- 项目切换指令区 -->
@@ -141,12 +277,33 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" x:Name="LastUpdateText" Text="等待连接..."
-                           Foreground="#666" FontSize="12" Margin="0,0,0,4"/>
-                <TextBlock Grid.Row="1" x:Name="InterviewStatusText" Text=""
+                <!--
+                    第一行左右分列：左边是最后一条系统消息（例如登录失败），
+                    右边是连接时间戳。两者都放在同一行是因为它们都不会高频
+                    变动，抢一行不如让状态栏矮一点——包装员看的是上面那两栏。
+                -->
+                <Grid Grid.Row="0" Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" x:Name="LastUpdateText" Text="等待连接..."
+                               Foreground="#888" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" x:Name="ConnectedText" Text=""
+                               Foreground="#666" FontSize="12" Margin="10,0,0,0"/>
+                </Grid>
+                <!--
+                    CSV 的写入结果。失败原因要原样显示：包装员只能靠这一行判断
+                    芯象有没有在读到最新状态，笼统的「写入失败」等于没信息。
+                -->
+                <TextBlock Grid.Row="1" x:Name="CsvStatusText" Text="CSV 尚未写入"
+                           Foreground="#666" FontSize="12" Margin="0,0,0,4"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Row="2" x:Name="InterviewStatusText" Text=""
                            Foreground="#888" FontSize="12" Margin="0,0,0,4"/>
-                <TextBlock Grid.Row="2" x:Name="FooterVersionText" Text="校园直播导播协调系统"
+                <TextBlock Grid.Row="3" x:Name="FooterVersionText" Text="校园直播导播协调系统"
                            Foreground="#444" FontSize="11"/>
             </Grid>
         </Border>

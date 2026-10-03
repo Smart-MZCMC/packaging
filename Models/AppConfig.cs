@@ -20,4 +20,26 @@ public class AppConfig
     /// </summary>
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
+
+    /// <summary>
+    /// CSV 输出路径，芯象（现场的视频切换台）从这里读当前播的是什么。
+    ///
+    /// 留空表示未配置：写入会失败并在状态栏提示，应用其它部分照常工作。
+    /// 这里刻意**不写死默认值**——config.json 是反序列化进已有实例的，
+    /// 现场已有配置文件里没有这个键，改默认值既不会补上（老文件仍旧是空串，
+    /// 于是任何写死的默认值都是空跑），也会让人以为路径是配好的。
+    /// 真正的默认值由界面层按「exe 同目录下的 state.csv」填。
+    /// </summary>
+    public string CsvPath { get; set; } = "";
+
+    /// <summary>
+    /// 赛事名覆盖，写进 CSV 第一行。
+    ///
+    /// 留空表示按 <c>ProjectId</c> 去后端查项目名当赛事名（见
+    /// <c>ProjectInfoService</c>），查不到就写空行。
+    /// 与 <see cref="CsvPath"/> 同一条取向：本地配置优先，没配才走后端。
+    /// 后端那份是权威答案，本地填的只是给「后端查不到、或现场就是只想写死」
+    /// 的场景留个出口——运动会名这种事现场常有临时叫法。
+    /// </summary>
+    public string EventName { get; set; } = "";
 }

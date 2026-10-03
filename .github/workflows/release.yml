@@ -1,0 +1,236 @@
+name: Release
+
+# 包装端：C# / .NET 10 WPF 桌面应用（net10.0-windows）
+# 依赖 WPF，只能在 Windows runner 上构建。
+#
+# 打 tag 即发版：
+#   git tag v1.6.0 && git push origin v1.6.0
+#
+# 与 ci.yml 的分工：ci.yml 跑在 main 的 push 上，产物用 upload-artifact
+# 挂在 Actions 里（7 天过期），现场根本拿不到安装包；本流程由本仓库自己的
+# tag 触发，产物是长期可下载的 Release 附件。两者互不替代，ci.yml 不动。
+#
+# 产物：
+#   packaging-<ver>-win-x64.zip   包装端发布包（解压即用，含 config.json）
+
+on:
+  push:
+    tags: ['v*']
+
+# 同一个 tag 不允许两次发布同时跑：附件名带版本号且是固定的，
+# 两个 run 交错上传/覆盖，现场会拿到一个半截的包。
+# cancel-in-progress 保持 false —— 发布中途失败要能重跑，不是把正在传的那个杀掉。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# 建 Release、上传附件必须要写权限，ci.yml 的 contents: read 不够。
+# 写在 workflow 顶层而不是 job 上：上传附件与 gh release create 分散在
+# 不同 step，没法只给其中一步提权。顶层设成 write 后其余 scope 自动降为
+# none，本流程也确实不需要别的 scope。
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # 目标框架是 net10.0-windows。
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      # 版本号就是触发本次流水线的 tag 去掉前缀 v。
+      #
+      # 为什么不去查后端（ci.yml 是查的）：ci.yml 跑在 main 的 push 上，
+      # 没有任何信号能说明「这次要发哪个版本」，所以只能去问后端最新的
+      # release tag —— 它跟着后端的发布节奏走。本流程的触发信号就是本仓库
+      # 的 tag，tag 里写的是什么版本就发什么版本；再去查后端反而可能拿到
+      # 另一个版本，产出的包与 tag 对不上。
+      #
+      # 为什么格式不对就失败、不像 ci.yml 那样回落到 0.0.0-ci：
+      # 回落是为了让日常 CI 在拿不到版本号时还能跑完，发版流程里那个回落
+      # 会真的发出一个没人认得的安装包，比当场构建失败更难收场。
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 用 runner 给的 GITHUB_REF_NAME，而不是把 github.ref_name 那个
+          # 表达式直接写进脚本：tag 名完全由推送方控制，插值进 shell 就是
+          # 注入点（tag 里塞 `; curl ...` 就能在 runner 上执行任意命令）。
+          # 表达式写在哪儿都会被 Actions 替换，注释里写也一样，所以这里
+          # 只提名字不写原式。
+          version="${GITHUB_REF_NAME#v}"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::版本号格式应为 v<major>.<minor>.<patch>，实际 tag 为 '$GITHUB_REF_NAME'"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          echo "发布版本: $version"
+
+      # 后面几处把 version 直接插进命令行是安全的：它在上面已经被正则卡到
+      # 只剩数字和点，不存在能拼出第二条命令的字符。这也是这里必须硬失败、
+      # 不能回落 0.0.0-ci 的另一个理由——回落值同样安全，但没人认得。
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -p:Version=${{ steps.ver.outputs.version }} --no-restore --configuration Release
+
+      # 当前工程没有测试项目，dotnet test 在无测试时会直接失败，因此先判断再执行。
+      # 发版前跑一次是为了以后真加了测试项目时，发布不会绕过它。
+      - name: Test
+        shell: bash
+        run: |
+          set -e
+          if find . -name '*.csproj' -iname '*test*' | grep -q .; then
+            dotnet test --no-build --configuration Release
+          else
+            echo "没有发现测试项目，跳过"
+          fi
+
+      # 上面 build 过了，所以这里可以 --no-build：两个命令的 -p:Version 一致，
+      # publish 拿到的正是 build 出来的那份中间产物。少了这个一致性就会
+      # 出现「publish 又重新编译了一遍」的白工。
+      - name: Publish
+        run: dotnet publish -p:Version=${{ steps.ver.outputs.version }} --no-build --configuration Release --output publish
+
+      # publish/ 只是构建输出、没入库（.gitignore 第 5 行），runner 上是
+      # checkout 之后新建的空目录，所以不存在「把源码一起打进包」的问题。
+      # 这一步真正要防的是另一件事：压缩层级错了、或者漏了 config.json，
+      # 现场解压出来才发现，而那时候已经发到 Release 上了。
+      - name: Package zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.ver.outputs.version }}'
+          $zip = Join-Path $env:GITHUB_WORKSPACE "packaging-$version-win-x64.zip"
+
+          # 缺任何一个都是发出去就装不上：runtimeconfig/deps 决定它是
+          # 依赖运行时的包，config.json 是现场唯一能改服务器地址的地方。
+          foreach ($f in @('PackagingApp.exe', 'PackagingApp.runtimeconfig.json',
+                            'PackagingApp.deps.json', 'config.json')) {
+            if (-not (Test-Path (Join-Path 'publish' $f))) {
+              Write-Output "::error::publish 里缺 $f，说明 publish 不完整，别发这个包"
+              exit 1
+            }
+          }
+
+          # -Path 'publish\*' 而不是 'publish'：前者让 exe 直接躺在 zip 根目录，
+          # 解压完双击就是它；后者会多出一层 publish\，现场会以为没解压对。
+          Compress-Archive -Path 'publish\*' -DestinationPath $zip -CompressionLevel Optimal -Force
+
+          # 验 zip 里真的有东西、且 exe 确实在根层级（压错层级只有这里查得出来）。
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
+          try {
+            $names = $archive.Entries.FullName
+          } finally {
+            $archive.Dispose()
+          }
+          if ($names -notcontains 'PackagingApp.exe') {
+            Write-Output "::error::$zip 的根层级没有 PackagingApp.exe，实际条目：$($names -join ', ')"
+            exit 1
+          }
+          Write-Output "附件: packaging-$version-win-x64.zip（$($names.Count) 个文件）"
+
+      # Notes 走文件不走 --notes 内联：内联的话 markdown 里的反引号、
+      # 换行和 $ 都要跟 bash 转义缠在一起，改一句文案就可能引号失配。
+      #
+      # heredoc 定界符加引号（<<'NOTES'）是必须的——说明里有整篇 markdown
+      # 的反引号，不加引号的话 bash 会把 `` `xxx` `` 当成命令替换执行。
+      # 版本号用 __VERSION__ 占位再 sed 替换，而不是用不带引号的 heredoc
+      # 做变量展开，正是同一个原因。
+      - name: Write release notes
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/release-notes.md"
+          cat > "$notes" <<'NOTES'
+          ## 这是什么
+
+          包装端 —— 给导播 B / 字幕员用的同步屏幕，把导播的切台指令和内部
+          沟通消息集中显示出来，避免包装人员靠喊话或事后才发现已经切了画面。
+          C# / .NET 10 WPF 桌面应用。本包是**依赖运行时**的发布版。
+
+          ## 怎么用
+
+          1. 解压 `packaging-__VERSION__-win-x64.zip`。exe 和 `config.json`
+             直接在解压后的目录里，没有多余的子文件夹。
+          2. 把整个目录拷到**包装机**，双击 exe 即可。
+          3. 首次运行前装 **.NET 10 桌面运行时（Desktop Runtime）**：
+             <https://dotnet.microsoft.com/download/dotnet/10.0>
+             没装会弹「必须安装 .NET 桌面运行时」。装了 SDK 也行，但没必要。
+          4. 打开同目录的 `config.json`，把 `WsUrl` / `ServerUrl` / `ProjectId`
+             改成现场值，保存后双击 exe。改地址**不需要重新编译**，改完重启即可。
+          5. 要让芯象读到「现在播的是什么」，把 `CsvPath` 指到一个**可写的
+             网络共享**（父目录会自动建）。每次切台它会写一个固定三行的
+             `state.csv`：赛事名 / 项目名 / 切台状态。**留空就写不出去**，
+             其余功能不受影响。格式与取名规则见仓库 README。
+
+          **完整说明见仓库 README。**
+
+          ## 版本
+
+          本次发布：`v__VERSION__`，来源 tag `__TAG__`。
+
+          版本号由 tag 决定（构建时以 `-p:Version` 注入），不是 csproj 里的
+          默认值。客户端靠它和后端版本比对，低于服务端要求的最低适配版本时
+          界面会提示必须更新，所以别拿这个包去凑合。
+          NOTES
+          # 版本号已被上面的正则限制成数字与点，替换进 sed 不会引入元字符。
+          sed -i "s/__VERSION__/$VERSION/g; s/__TAG__/$TAG/g" "$notes"
+          cat "$notes"
+
+      # 仓库本身是 public，附件一旦发布即可被任何人下载——内网分发场景下
+      # 要改成 draft 走人工确认。
+      #
+      # 先 view 再决定 create 还是 upload：重跑同一个 tag 时 Release 已经
+      # 存在了，直接 upload 会报「release not found」或变成建一个新 Release，
+      # 重跑发布的人看不出区别在哪。加上 --clobber 之后同一个 tag 重跑是幂等的。
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # runner 会自动设 GH_REPO，但显式写出来更保险：没设时 gh 会
+          # 交互式地问「选哪个仓库」，在 CI 里就是一直挂着直到超时。
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          asset="packaging-$VERSION-win-x64.zip"
+          notes="$RUNNER_TEMP/release-notes.md"
+          title="绵中融媒体智汇导播系统 包装端 v$VERSION"
+
+          # --verify-tag：tag 对不上时 gh 会默默在默认分支上另建一个同名 tag，
+          # 结果 Release 挂在错误的提交上。宁可失败也不要这种 Release。
+          # --latest 显式给：本流程只由 tag push 触发，这个 tag 就是当前要发的
+          # 版本，交给 GitHub 自动推断 latest 在有预发布版本时会算错。
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice::tag $TAG 的 Release 已存在，覆盖附件（重跑发布）"
+            gh release upload "$TAG" "$asset" --clobber
+          else
+            gh release create "$TAG" --verify-tag \
+              --title "$title" --notes-file "$notes" --latest
+            gh release upload "$TAG" "$asset"
+          fi
+
+      - name: Summary
+        shell: bash
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          echo "### 包装端 v$VERSION 已发布" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "附件：\`packaging-$VERSION-win-x64.zip\`（tag \`$TAG\`）" >> "$GITHUB_STEP_SUMMARY"

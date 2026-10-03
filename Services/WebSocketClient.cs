@@ -27,6 +27,21 @@ public class WebSocketClient : IDisposable
     /// </summary>
     private string? _token;
 
+    /// <summary>
+    /// 最近一次登录拿到的 JWT，供需要带令牌调 HTTP 接口的地方复用。
+    ///
+    /// 为什么暴露出来：取项目名（<c>GET /api/projects</c>）挂在后端的 Jwt() 组里，
+    /// 没有令牌就是 401，而令牌只在这个类里登录时拿得到。此前它是私有的，
+    /// 于是 ProjectInfoService 只能等外部喂——而这个类没有对外抛令牌的通道，
+    /// 结果就是「服务写了、却永远拿不到令牌」。
+    ///
+    /// 每次重连都会重新登录，所以读到的永远是**当前**这份，不是最初那份。
+    /// 但反过来也要知道：连接稳定不重连时它不会自动续期，而 JWT 默认 60 分钟
+    /// 过期。所以用它去调接口必须容错——过期的表现是 401，被当成软失败吞掉。
+    /// 调用方应当缓存最后一次成功的结果，不要指望每次都能拿到新令牌。
+    /// </summary>
+    public string? Token => _token;
+
     public event Action<bool>? ConnectionChanged;
 
     /// <summary>
